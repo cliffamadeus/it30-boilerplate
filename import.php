@@ -1,35 +1,41 @@
 <?php
 
+// ============================================================
 // DATABASE CONNECTION
-$host = 'localhost';
-$db   = 'it30_lab_db';
-$user = 'root';
-$pass = '';
-$charset = 'utf8mb4';
+// ============================================================
+function db(): PDO
+{
+    static $pdo = null;
 
-$dsn = "mysql:host=$host;dbname=$db;charset=$charset";
+    if ($pdo instanceof PDO) {
+        return $pdo;
+    }
 
-$options = [
-    PDO::ATTR_ERRMODE            => PDO::ERRMODE_EXCEPTION,
-    PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
-    PDO::ATTR_EMULATE_PREPARES   => false,
-];
+    $host    = 'localhost';
+    $db      = 'it30_lab_db';
+    $user    = 'root';
+    $pass    = '';
+    $charset = 'utf8mb4';
 
-try {
+    $dsn = "mysql:host=$host;dbname=$db;charset=$charset";
+
+    $options = [
+        PDO::ATTR_ERRMODE            => PDO::ERRMODE_EXCEPTION,
+        PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
+        PDO::ATTR_EMULATE_PREPARES   => false,
+    ];
+
     $pdo = new PDO($dsn, $user, $pass, $options);
-} catch (PDOException $e) {
-    die("Database connection failed: " . $e->getMessage());
+
+    return $pdo;
 }
 
-session_start();
-
-// HELPER: Normalize a header cell
+// HELPERS
 function normalizeHeader(string $header): string
 {
     return strtolower(trim(str_replace([' ', '-'], '_', $header)));
 }
 
-// HELPER: Parse uploaded CSV into rows (header + data)
 function parseCsv(string $path): array
 {
     $rows = [];
@@ -56,8 +62,6 @@ function parseCsv(string $path): array
     return $rows;
 }
 
-// HELPER: Validate a parsed CSV against required columns.
-// Returns [ 'ok' => bool, 'header' => [...], 'col' => [...], 'rows' => [...], 'errors' => [...] ]
 function validateCsv(array $rows, array $required): array
 {
     $result = [
@@ -89,7 +93,6 @@ function validateCsv(array $rows, array $required): array
     return $result;
 }
 
-// HELPER: Extract & validate a single student row
 function extractStudent(array $row, array $col): array
 {
     $firstName = trim($row[$col['student_first_name']] ?? '');
@@ -110,133 +113,198 @@ function extractStudent(array $row, array $col): array
     ];
 }
 
-$required = ['student_first_name', 'student_last_name', 'student_course'];
-
-// STAGE TRACKING
-$stage    = 'upload';   // upload | preview | done
-$preview  = null;       // data for preview stage
-$results  = null;       // data for done stage
-$fatal    = null;       // fatal error string
-
 // ============================================================
-// STEP 1 — UPLOAD: validate CSV, build preview, stash in session
+// HANDLERS
 // ============================================================
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['step'] ?? '') === 'upload') {
 
+/**
+ * Handle STEP 1 (upload).
+ * Validates the uploaded CSV and returns a preview payload.
+ *
+ * @return array { fatal?: string, preview?: array }
+ */
+function handleUpload(): array
+{
     $file = $_FILES['csv_file'] ?? null;
 
     if (!$file || $file['error'] !== UPLOAD_ERR_OK) {
-        $fatal = 'File upload failed.';
-    } elseif (strtolower(pathinfo($file['name'], PATHINFO_EXTENSION)) !== 'csv') {
-        $fatal = 'Only .csv files are allowed.';
-    } else {
-
-        $rows = parseCsv($file['tmp_name']);
-        $v    = validateCsv($rows, $required);
-
-        if (!$v['ok']) {
-            $fatal = implode(' ', $v['errors']);
-        } else {
-
-            // Build preview rows
-            $previewRows = [];
-            $validCount  = 0;
-            $invalidCount = 0;
-
-            $line = 1;
-
-            foreach ($v['rows'] as $row) {
-
-                $line++;
-                $s = extractStudent($row, $v['col']);
-
-                if ($s['valid']) {
-                    $validCount++;
-                } else {
-                    $invalidCount++;
-                }
-
-                $previewRows[] = [
-                    'line'       => $line,
-                    'valid'      => $s['valid'],
-                    'errors'     => $s['errors'],
-                    'first_name' => $s['first_name'],
-                    'last_name'  => $s['last_name'],
-                    'course'     => $s['course'],
-                ];
-            }
-
-            // Stash preview rows in session for confirmation step
-            $_SESSION['import_preview'] = $previewRows;
-
-            $preview = [
-                'filename'      => $file['name'],
-                'rows'          => $previewRows,
-                'valid_count'   => $validCount,
-                'invalid_count' => $invalidCount,
-            ];
-
-            $stage = 'preview';
-        }
+        return ['fatal' => 'File upload failed.'];
     }
+
+    if (strtolower(pathinfo($file['name'], PATHINFO_EXTENSION)) !== 'csv') {
+        return ['fatal' => 'Only .csv files are allowed.'];
+    }
+
+    $required = ['student_first_name', 'student_last_name', 'student_course'];
+
+    $rows = parseCsv($file['tmp_name']);
+    $v    = validateCsv($rows, $required);
+
+    if (!$v['ok']) {
+        return ['fatal' => implode(' ', $v['errors'])];
+    }
+
+    $previewRows  = [];
+    $validCount   = 0;
+    $invalidCount = 0;
+
+    $line = 1;
+
+    foreach ($v['rows'] as $row) {
+        $line++;
+        $s = extractStudent($row, $v['col']);
+
+        if ($s['valid']) {
+            $validCount++;
+        } else {
+            $invalidCount++;
+        }
+
+        $previewRows[] = [
+            'line'       => $line,
+            'valid'      => $s['valid'],
+            'errors'     => $s['errors'],
+            'first_name' => $s['first_name'],
+            'last_name'  => $s['last_name'],
+            'course'     => $s['course'],
+        ];
+    }
+
+    // Stash for the confirmation step
+    $_SESSION['import_preview'] = $previewRows;
+
+    return [
+        'preview' => [
+            'filename'      => $file['name'],
+            'rows'          => $previewRows,
+            'valid_count'   => $validCount,
+            'invalid_count' => $invalidCount,
+        ],
+    ];
 }
 
-// ============================================================
-// STEP 2 — CONFIRM: insert only valid rows from session
-// ============================================================
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['step'] ?? '') === 'confirm') {
-
+/**
+ * Handle STEP 2 (confirm).
+ * Inserts valid rows from the session preview.
+ *
+ * @return array { fatal?: string, results?: array }
+ */
+function handleConfirm(): array
+{
     $rows = $_SESSION['import_preview'] ?? null;
 
     if (!$rows) {
-        $fatal = 'No preview data found. Please upload the CSV again.';
-    } else {
+        return ['fatal' => 'No preview data found. Please upload the CSV again.'];
+    }
 
-        $results = ['success' => 0, 'failed' => 0, 'errors' => []];
+    $pdo = db();
 
-        $stmt = $pdo->prepare("
-            INSERT INTO students (
-                student_first_name,
-                student_last_name,
-                student_course
-            ) VALUES (?, ?, ?)
-        ");
+    $results = ['success' => 0, 'failed' => 0, 'errors' => []];
 
-        foreach ($rows as $row) {
+    $stmt = $pdo->prepare("
+        INSERT INTO students (
+            student_first_name,
+            student_last_name,
+            student_course
+        ) VALUES (?, ?, ?)
+    ");
 
-            if (!$row['valid']) {
-                $results['failed']++;
-                $results['errors'][] =
-                    "Line {$row['line']}: Missing " . implode(', ', $row['errors']) . '.';
-                continue;
-            }
+    foreach ($rows as $row) {
 
-            try {
-                $stmt->execute([
-                    $row['first_name'],
-                    $row['last_name'],
-                    $row['course'],
-                ]);
-                $results['success']++;
-            } catch (PDOException $e) {
-                $results['failed']++;
-                $results['errors'][] = "Line {$row['line']}: " . $e->getMessage();
-            }
+        if (!$row['valid']) {
+            $results['failed']++;
+            $results['errors'][] =
+                "Line {$row['line']}: Missing " . implode(', ', $row['errors']) . '.';
+            continue;
         }
 
-        unset($_SESSION['import_preview']);
-        $stage = 'done';
+        try {
+            $stmt->execute([
+                $row['first_name'],
+                $row['last_name'],
+                $row['course'],
+            ]);
+            $results['success']++;
+        } catch (PDOException $e) {
+            $results['failed']++;
+            $results['errors'][] = "Line {$row['line']}: " . $e->getMessage();
+        }
     }
+
+    unset($_SESSION['import_preview']);
+
+    return ['results' => $results];
 }
 
-// ============================================================
-// STEP 3 — CANCEL: clear session and go back to upload
-// ============================================================
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['step'] ?? '') === 'cancel') {
+/**
+ * Handle STEP 3 (cancel).
+ * Clears the session preview and redirects back to the upload form.
+ */
+function handleCancel(): void
+{
     unset($_SESSION['import_preview']);
     header('Location: import.php');
     exit;
 }
+
+/**
+ * Main controller: decides which handler to run and returns
+ * the state (stage / preview / results / fatal) for the view.
+ *
+ * @return array
+ */
+function handleRequest(): array
+{
+    session_start();
+
+    $stage   = 'upload';
+    $preview = null;
+    $results = null;
+    $fatal   = null;
+
+    if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+
+        $step = $_POST['step'] ?? '';
+
+        switch ($step) {
+
+            case 'upload':
+                $out = handleUpload();
+                if (isset($out['fatal'])) {
+                    $fatal = $out['fatal'];
+                } else {
+                    $preview = $out['preview'];
+                    $stage   = 'preview';
+                }
+                break;
+
+            case 'confirm':
+                $out = handleConfirm();
+                if (isset($out['fatal'])) {
+                    $fatal = $out['fatal'];
+                } else {
+                    $results = $out['results'];
+                    $stage   = 'done';
+                }
+                break;
+
+            case 'cancel':
+                handleCancel(); // exits
+                break;
+        }
+    }
+
+    return compact('stage', 'preview', 'results', 'fatal');
+}
+
+// BOOTSTRAP
+$state = handleRequest();
+
+// Expose variables to the view
+$stage   = $state['stage'];
+$preview = $state['preview'];
+$results = $state['results'];
+$fatal   = $state['fatal'];
 
 ?>
 <!DOCTYPE html>
