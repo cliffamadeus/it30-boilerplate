@@ -23,87 +23,219 @@ try {
 
 session_start();
 
-// IMPORT HANDLER
-$results = null;
+// HELPER: Normalize a header cell
+function normalizeHeader(string $header): string
+{
+    return strtolower(trim(str_replace([' ', '-'], '_', $header)));
+}
 
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_FILES['csv_file'])) {
+// HELPER: Parse uploaded CSV into rows (header + data)
+function parseCsv(string $path): array
+{
+    $rows = [];
 
-    $results = ['success' => 0, 'failed' => 0, 'errors' => []];
+    $handle = fopen($path, 'r');
+    if ($handle === false) {
+        return $rows;
+    }
 
-    $file = $_FILES['csv_file'];
+    // Strip UTF-8 BOM if present
+    if (fread($handle, 3) !== "\xEF\xBB\xBF") {
+        rewind($handle);
+    }
 
-    if ($file['error'] !== UPLOAD_ERR_OK) {
-        $results['errors'][] = 'File upload failed.';
+    while (($row = fgetcsv($handle)) !== false) {
+        // Skip fully blank lines
+        if (count($row) === 1 && trim($row[0]) === '') {
+            continue;
+        }
+        $rows[] = $row;
+    }
+
+    fclose($handle);
+    return $rows;
+}
+
+// HELPER: Validate a parsed CSV against required columns.
+// Returns [ 'ok' => bool, 'header' => [...], 'col' => [...], 'rows' => [...], 'errors' => [...] ]
+function validateCsv(array $rows, array $required): array
+{
+    $result = [
+        'ok'     => false,
+        'header' => [],
+        'col'    => [],
+        'rows'   => [],
+        'errors' => [],
+    ];
+
+    if (empty($rows)) {
+        $result['errors'][] = 'The CSV file is empty.';
+        return $result;
+    }
+
+    $header = array_map('normalizeHeader', $rows[0]);
+    $result['header'] = $header;
+
+    $missing = array_diff($required, $header);
+    if (!empty($missing)) {
+        $result['errors'][] = 'Missing column(s): ' . implode(', ', $missing);
+        return $result;
+    }
+
+    $result['col']  = array_flip($header);
+    $result['rows'] = array_slice($rows, 1);
+    $result['ok']   = true;
+
+    return $result;
+}
+
+// HELPER: Extract & validate a single student row
+function extractStudent(array $row, array $col): array
+{
+    $firstName = trim($row[$col['student_first_name']] ?? '');
+    $lastName  = trim($row[$col['student_last_name']] ?? '');
+    $course    = trim($row[$col['student_course']] ?? '');
+
+    $missing = [];
+    if ($firstName === '') $missing[] = 'first name';
+    if ($lastName  === '') $missing[] = 'last name';
+    if ($course    === '') $missing[] = 'course';
+
+    return [
+        'valid'      => empty($missing),
+        'errors'     => $missing,
+        'first_name' => $firstName,
+        'last_name'  => $lastName,
+        'course'     => $course,
+    ];
+}
+
+$required = ['student_first_name', 'student_last_name', 'student_course'];
+
+// STAGE TRACKING
+$stage    = 'upload';   // upload | preview | done
+$preview  = null;       // data for preview stage
+$results  = null;       // data for done stage
+$fatal    = null;       // fatal error string
+
+// ============================================================
+// STEP 1 — UPLOAD: validate CSV, build preview, stash in session
+// ============================================================
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['step'] ?? '') === 'upload') {
+
+    $file = $_FILES['csv_file'] ?? null;
+
+    if (!$file || $file['error'] !== UPLOAD_ERR_OK) {
+        $fatal = 'File upload failed.';
     } elseif (strtolower(pathinfo($file['name'], PATHINFO_EXTENSION)) !== 'csv') {
-        $results['errors'][] = 'Only .csv files are allowed.';
+        $fatal = 'Only .csv files are allowed.';
     } else {
 
-        $handle = fopen($file['tmp_name'], 'r');
+        $rows = parseCsv($file['tmp_name']);
+        $v    = validateCsv($rows, $required);
 
-        if ($handle === false) {
-            $results['errors'][] = 'Could not open the uploaded file.';
+        if (!$v['ok']) {
+            $fatal = implode(' ', $v['errors']);
         } else {
 
-            // Strip UTF-8 BOM if present
-            if (fread($handle, 3) !== "\xEF\xBB\xBF") {
-                rewind($handle);
-            }
+            // Build preview rows
+            $previewRows = [];
+            $validCount  = 0;
+            $invalidCount = 0;
 
-            // Read header row
-            $header = fgetcsv($handle);
-            $header = array_map(fn($h) => strtolower(trim(str_replace([' ', '-'], '_', $h))), $header);
+            $line = 1;
 
-            $required = ['student_first_name', 'student_last_name', 'student_course'];
-            $missing  = array_diff($required, $header);
+            foreach ($v['rows'] as $row) {
 
-            if (!empty($missing)) {
-                $results['errors'][] = 'Missing column(s): ' . implode(', ', $missing);
-            } else {
+                $line++;
+                $s = extractStudent($row, $v['col']);
 
-                $col = array_flip($header);
-
-                $stmt = $pdo->prepare("
-                    INSERT INTO students (
-                        student_first_name,
-                        student_last_name,
-                        student_course
-                    ) VALUES (?, ?, ?)
-                ");
-
-                $line = 1;
-
-                while (($row = fgetcsv($handle)) !== false) {
-
-                    $line++;
-
-                    // Skip blank lines
-                    if (count($row) === 1 && trim($row[0]) === '') {
-                        continue;
-                    }
-
-                    $firstName = trim($row[$col['student_first_name']] ?? '');
-                    $lastName  = trim($row[$col['student_last_name']] ?? '');
-                    $course    = trim($row[$col['student_course']] ?? '');
-
-                    if ($firstName === '' || $lastName === '' || $course === '') {
-                        $results['failed']++;
-                        $results['errors'][] = "Line $line: Missing required field(s).";
-                        continue;
-                    }
-
-                    try {
-                        $stmt->execute([$firstName, $lastName, $course]);
-                        $results['success']++;
-                    } catch (PDOException $e) {
-                        $results['failed']++;
-                        $results['errors'][] = "Line $line: " . $e->getMessage();
-                    }
+                if ($s['valid']) {
+                    $validCount++;
+                } else {
+                    $invalidCount++;
                 }
+
+                $previewRows[] = [
+                    'line'       => $line,
+                    'valid'      => $s['valid'],
+                    'errors'     => $s['errors'],
+                    'first_name' => $s['first_name'],
+                    'last_name'  => $s['last_name'],
+                    'course'     => $s['course'],
+                ];
             }
 
-            fclose($handle);
+            // Stash preview rows in session for confirmation step
+            $_SESSION['import_preview'] = $previewRows;
+
+            $preview = [
+                'filename'      => $file['name'],
+                'rows'          => $previewRows,
+                'valid_count'   => $validCount,
+                'invalid_count' => $invalidCount,
+            ];
+
+            $stage = 'preview';
         }
     }
+}
+
+// ============================================================
+// STEP 2 — CONFIRM: insert only valid rows from session
+// ============================================================
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['step'] ?? '') === 'confirm') {
+
+    $rows = $_SESSION['import_preview'] ?? null;
+
+    if (!$rows) {
+        $fatal = 'No preview data found. Please upload the CSV again.';
+    } else {
+
+        $results = ['success' => 0, 'failed' => 0, 'errors' => []];
+
+        $stmt = $pdo->prepare("
+            INSERT INTO students (
+                student_first_name,
+                student_last_name,
+                student_course
+            ) VALUES (?, ?, ?)
+        ");
+
+        foreach ($rows as $row) {
+
+            if (!$row['valid']) {
+                $results['failed']++;
+                $results['errors'][] =
+                    "Line {$row['line']}: Missing " . implode(', ', $row['errors']) . '.';
+                continue;
+            }
+
+            try {
+                $stmt->execute([
+                    $row['first_name'],
+                    $row['last_name'],
+                    $row['course'],
+                ]);
+                $results['success']++;
+            } catch (PDOException $e) {
+                $results['failed']++;
+                $results['errors'][] = "Line {$row['line']}: " . $e->getMessage();
+            }
+        }
+
+        unset($_SESSION['import_preview']);
+        $stage = 'done';
+    }
+}
+
+// ============================================================
+// STEP 3 — CANCEL: clear session and go back to upload
+// ============================================================
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['step'] ?? '') === 'cancel') {
+    unset($_SESSION['import_preview']);
+    header('Location: import.php');
+    exit;
 }
 
 ?>
@@ -114,6 +246,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_FILES['csv_file'])) {
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Import Students from CSV</title>
+
+    <style>
+        body { font-family: sans-serif; }
+        table { border-collapse: collapse; margin-top: 10px; }
+        th, td { border: 1px solid #999; padding: 6px 10px; text-align: left; }
+        th { background: #f0f0f0; }
+        .row-invalid { background: #ffe6e6; }
+        .row-valid   { background: #eaffea; }
+        .badge { padding: 2px 6px; border-radius: 4px; font-size: 0.85em; }
+        .badge-ok  { background: #c9f0c9; }
+        .badge-bad { background: #f7c9c9; }
+        .summary { margin: 12px 0; padding: 10px; border: 1px solid #ccc; background: #fafafa; }
+    </style>
 </head>
 
 <body>
@@ -127,7 +272,144 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_FILES['csv_file'])) {
 
 <hr>
 
-<?php if ($results !== null): ?>
+<?php if ($fatal !== null): ?>
+
+    <h3>Error</h3>
+    <p style="color:#b00;"><?= htmlspecialchars($fatal) ?></p>
+    <p><a href="import.php">Try again</a></p>
+
+<?php endif; ?>
+
+
+<?php if ($stage === 'upload' && $fatal === null): ?>
+
+    <h3>Upload Students CSV</h3>
+
+    <p>
+        The CSV must include a header row with the columns:
+        <code>student_first_name, student_last_name, student_course</code>
+    </p>
+
+    <p><strong>Example:</strong></p>
+
+    <pre>student_first_name,student_last_name,student_course
+CLIFF AMADEUS,EVANGELIO,BSIT
+JAN XAVIER,EVANGELIO,BSA-AGRONOMY
+RON EDMUND,EVANGELIO,BSEE</pre>
+
+    <form method="POST" enctype="multipart/form-data">
+
+        <input type="hidden" name="step" value="upload">
+
+        <p>
+            <label>CSV File:</label><br>
+            <input type="file" name="csv_file" accept=".csv" required>
+        </p>
+
+        <button type="submit">Preview</button>
+
+    </form>
+
+<?php endif; ?>
+
+
+<?php if ($stage === 'preview' && $preview !== null): ?>
+
+    <h3>Preview: <?= htmlspecialchars($preview['filename']) ?></h3>
+
+    <div class="summary">
+        <strong>Total rows:</strong> <?= count($preview['rows']) ?><br>
+        <strong>Valid:</strong> <?= (int) $preview['valid_count'] ?><br>
+        <strong>Invalid:</strong> <?= (int) $preview['invalid_count'] ?>
+    </div>
+
+    <?php if ($preview['valid_count'] === 0): ?>
+
+        <p style="color:#b00;">No valid rows to import.</p>
+
+    <?php else: ?>
+
+        <p>
+            Review the rows below. Only <strong>valid</strong> rows will be inserted.
+            Invalid rows will be skipped.
+        </p>
+
+        <table>
+
+            <thead>
+                <tr>
+                    <th>Line</th>
+                    <th>Status</th>
+                    <th>First Name</th>
+                    <th>Last Name</th>
+                    <th>Course</th>
+                    <th>Notes</th>
+                </tr>
+            </thead>
+
+            <tbody>
+
+                <?php foreach ($preview['rows'] as $row): ?>
+
+                    <tr class="<?= $row['valid'] ? 'row-valid' : 'row-invalid' ?>">
+
+                        <td><?= (int) $row['line'] ?></td>
+
+                        <td>
+                            <?php if ($row['valid']): ?>
+                                <span class="badge badge-ok">OK</span>
+                            <?php else: ?>
+                                <span class="badge badge-bad">SKIP</span>
+                            <?php endif; ?>
+                        </td>
+
+                        <td><?= htmlspecialchars($row['first_name']) ?></td>
+                        <td><?= htmlspecialchars($row['last_name']) ?></td>
+                        <td><?= htmlspecialchars($row['course']) ?></td>
+
+                        <td>
+                            <?= $row['valid']
+                                ? ''
+                                : 'Missing ' . htmlspecialchars(implode(', ', $row['errors'])) ?>
+                        </td>
+
+                    </tr>
+
+                <?php endforeach; ?>
+
+            </tbody>
+
+        </table>
+
+    <?php endif; ?>
+
+    <hr>
+
+    <form method="POST" style="display:inline;">
+
+        <input type="hidden" name="step" value="confirm">
+
+        <button type="submit"
+            <?= $preview['valid_count'] === 0 ? 'disabled' : '' ?>
+            onclick="return confirm('Import <?= (int) $preview['valid_count'] ?> valid student(s)?');"
+        >
+            Confirm Import
+        </button>
+
+    </form>
+
+    <form method="POST" style="display:inline;">
+
+        <input type="hidden" name="step" value="cancel">
+
+        <button type="submit">Cancel</button>
+
+    </form>
+
+<?php endif; ?>
+
+
+<?php if ($stage === 'done' && $results !== null): ?>
 
     <h3>Import Results</h3>
 
@@ -150,34 +432,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_FILES['csv_file'])) {
         <a href="index.php?section=students">Back to Students</a>
     </p>
 
-    <hr>
-
 <?php endif; ?>
-
-<h3>Upload Students CSV</h3>
-
-<p>
-    The CSV must include a header row with the columns:
-    <code>student_first_name, student_last_name, student_course</code>
-</p>
-
-<p><strong>Example:</strong></p>
-
-<pre>student_first_name,student_last_name,student_course
-CLIFF AMADEUS,EVANGELIO,BSIT
-JAN XAVIER,EVANGELIO,BSA-AGRONOMY
-RON EDMUND,EVANGELIO,BSEE</pre>
-
-<form method="POST" enctype="multipart/form-data">
-
-    <p>
-        <label>CSV File:</label><br>
-        <input type="file" name="csv_file" accept=".csv" required>
-    </p>
-
-    <button type="submit">Import Students</button>
-
-</form>
 
 </body>
 </html>
