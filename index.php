@@ -246,7 +246,6 @@ if ($section === 'books' && $action === 'delete') {
     exit;
 }
 
-
 // BORROW CREATE
 if ($section === 'borrow' && $action === 'create') {
 
@@ -257,20 +256,64 @@ if ($section === 'borrow' && $action === 'create') {
 
         if ($studentId > 0 && $bookId > 0) {
 
+            // CHECK IF STUDENT HAS AN UNRETURNED BOOK
             $stmt = $pdo->prepare("
-                INSERT INTO borrow (
-                    student_id,
-                    book_id
-                )
-                VALUES (?, ?)
+                SELECT borrow_id
+                FROM borrow
+                WHERE student_id = ?
+                  AND borrow_return_date IS NULL
+                LIMIT 1
             ");
 
-            $stmt->execute([
-                $studentId,
-                $bookId
-            ]);
+            $stmt->execute([$studentId]);
 
-            $_SESSION['alert'] = 'Book borrowed successfully.';
+            $studentBorrow = $stmt->fetch();
+
+            if ($studentBorrow) {
+
+                $_SESSION['alert'] =
+                    'This student cannot borrow another book because a previous book has not been returned.';
+
+            } else {
+
+                // CHECK IF BOOK IS ALREADY BORROWED
+                $stmt = $pdo->prepare("
+                    SELECT borrow_id
+                    FROM borrow
+                    WHERE book_id = ?
+                      AND borrow_return_date IS NULL
+                    LIMIT 1
+                ");
+
+                $stmt->execute([$bookId]);
+
+                $bookBorrow = $stmt->fetch();
+
+                if ($bookBorrow) {
+
+                    $_SESSION['alert'] =
+                        'This book cannot be borrowed because it has not been returned.';
+
+                } else {
+
+                    // CREATE BORROW RECORD
+                    $stmt = $pdo->prepare("
+                        INSERT INTO borrow (
+                            student_id,
+                            book_id
+                        )
+                        VALUES (?, ?)
+                    ");
+
+                    $stmt->execute([
+                        $studentId,
+                        $bookId
+                    ]);
+
+                    $_SESSION['alert'] =
+                        'Book borrowed successfully.';
+                }
+            }
 
             header("Location: index.php?section=borrow");
             exit;
