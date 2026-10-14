@@ -475,6 +475,11 @@ if ($section === 'borrow') {
             Add Student
         </a>
     </p>
+    <p>
+        <a href="import.php">
+            Import Students
+        </a>
+    </p>
 
     <?php if ($action === 'create'): ?>
 
