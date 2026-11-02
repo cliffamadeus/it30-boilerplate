@@ -1,11 +1,7 @@
 <?php
 // includes/navbar.php
-// Determines the active section from the current script or query string.
-// Falls back to 'dashboard' as the default.
-
 $currentSection = $_GET['section'] ?? 'dashboard';
 
-// Helper to mark the active link
 function navActive($section, $currentSection) {
     return $section === $currentSection ? 'active' : '';
 }
@@ -14,7 +10,7 @@ function navActive($section, $currentSection) {
 <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
 
 <style>
-    /* Scoped navbar styles */
+    /* Scoped Material Navbar styles */
     .app-header {
         display: flex;
         justify-content: space-between;
@@ -22,57 +18,58 @@ function navActive($section, $currentSection) {
         margin-bottom: 2rem;
         flex-wrap: wrap;
         gap: 1rem;
-        font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+        font-family: Roboto, system-ui, -apple-system, sans-serif;
     }
 
     .app-header h1 {
-        font-weight: 500;
+        font-weight: 400;
         font-size: 1.8rem;
-        letter-spacing: -0.02em;
         display: flex;
         align-items: center;
         gap: 0.5rem;
-        color: #0f172a;
+        color: #212121;
         margin: 0;
     }
 
     .app-header h1 .material-icons {
-        font-size: 2rem;
-        color: #1e293b;
+        font-size: 2.2rem;
+        color: #1976d2; /* Material Primary Blue */
     }
 
     .nav-links {
         display: flex;
-        gap: 0.5rem;
-        background: #ffffff;
-        padding: 0.35rem;
-        border-radius: 3rem;
-        border: 1px solid #e9eef2;
+        gap: 0.25rem;
+        background: transparent;
     }
 
     .nav-links a {
         text-decoration: none;
-        color: #334155;
+        color: #616161;
         font-size: 0.9rem;
-        padding: 0.5rem 1.2rem;
-        border-radius: 2rem;
-        transition: 0.15s;
+        font-weight: 500;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        padding: 0.6rem 1.2rem;
+        border-radius: 4px; /* Material flat button radius */
+        transition: background-color 0.2s, color 0.2s;
         display: flex;
         align-items: center;
         gap: 0.35rem;
     }
 
     .nav-links a .material-icons {
-        font-size: 1.1rem;
+        font-size: 1.2rem;
     }
 
     .nav-links a:hover {
-        background: #f1f5f9;
+        background: #e3f2fd; /* Light blue hover */
+        color: #1976d2;
     }
 
     .nav-links a.active {
-        background: #1e293b;
+        background: #1976d2;
         color: white;
+        box-shadow: 0 2px 2px 0 rgba(0,0,0,0.14), 0 3px 1px -2px rgba(0,0,0,0.12), 0 1px 5px 0 rgba(0,0,0,0.2);
     }
 
     .nav-links a.active .material-icons {
@@ -86,11 +83,13 @@ function navActive($section, $currentSection) {
         }
         .nav-links {
             width: 100%;
-            justify-content: space-between;
+            overflow-x: auto;
+            padding-bottom: 0.5rem;
         }
         .nav-links a {
             padding: 0.5rem 0.8rem;
             font-size: 0.8rem;
+            white-space: nowrap;
         }
     }
 </style>
@@ -98,7 +97,7 @@ function navActive($section, $currentSection) {
 <header class="app-header">
     <h1>
         <span class="material-icons">local_library</span>
-        library dashboard
+        Library Dashboard
     </h1>
     <nav class="nav-links">
         <a href="index.php?section=dashboard" class="<?= navActive('dashboard', $currentSection) ?>">

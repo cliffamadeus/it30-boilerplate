@@ -1,10 +1,8 @@
 <?php
 // ============================================================
-// DASHBOARD – uses real data from the database
-// Navbar is included from includes/navbar.php
+// DASHBOARD – Materialize Flat Design
 // ============================================================
 
-// DATABASE CONNECTION
 $host = 'localhost';
 $db   = 'it30_lab_db';
 $user = 'root';
@@ -31,7 +29,7 @@ $bookCount     = $pdo->query("SELECT COUNT(*) FROM books")->fetchColumn();
 $totalBorrows  = $pdo->query("SELECT COUNT(*) FROM borrow")->fetchColumn();
 $activeBorrows = $pdo->query("SELECT COUNT(*) FROM borrow WHERE borrow_return_date IS NULL")->fetchColumn();
 
-// ---------- 2. BOOKS BY CATEGORY (for doughnut) ----------
+// ---------- 2. BOOKS BY CATEGORY ----------
 $catStmt = $pdo->query("
     SELECT book_category, COUNT(*) AS cnt
     FROM books
@@ -45,7 +43,7 @@ while ($row = $catStmt->fetch()) {
     $categoryCounts[] = (int) $row['cnt'];
 }
 
-// ---------- 3. BORROW ACTIVITY LAST 7 DAYS (for bar chart) ----------
+// ---------- 3. BORROW ACTIVITY LAST 7 DAYS ----------
 $dailyStmt = $pdo->query("
     SELECT DATE(borrow_date) AS day, COUNT(*) AS cnt
     FROM borrow
@@ -66,7 +64,7 @@ for ($i = 6; $i >= 0; $i--) {
     $dailyBorrows[] = $borrowByDay[$date] ?? 0;
 }
 
-// ---------- 4. RECENT BORROWS (for mini list) ----------
+// ---------- 4. RECENT BORROWS ----------
 $recentStmt = $pdo->query("
     SELECT
         s.student_first_name,
@@ -91,33 +89,52 @@ $recentBorrows = $recentStmt->fetchAll();
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
+        
+        /* Materialize Base Typography */
         body {
-            background: #f8fafc;
-            font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
-            color: #0f172a;
+            background: #f5f5f5; /* Material Grey 100 */
+            font-family: Roboto, system-ui, -apple-system, sans-serif;
+            color: #212121; /* Material Grey 900 */
             padding: 2rem 1.5rem;
             display: flex;
             flex-direction: column;
             align-items: center;
         }
+        
         .dashboard { max-width: 1300px; width: 100%; }
+
+        /* Materialize Standard Card */
+        .stat-card, .chart-card, .recent-borrows {
+            background: #ffffff;
+            border-radius: 2px;
+            box-shadow: 0 2px 2px 0 rgba(0,0,0,0.14), 
+                        0 3px 1px -2px rgba(0,0,0,0.12), 
+                        0 1px 5px 0 rgba(0,0,0,0.2);
+            transition: box-shadow 0.3s;
+        }
+        .stat-card:hover, .chart-card:hover, .recent-borrows:hover {
+            box-shadow: 0 4px 5px 0 rgba(0,0,0,0.14), 
+                        0 1px 10px 0 rgba(0,0,0,0.12), 
+                        0 2px 4px -1px rgba(0,0,0,0.3);
+        }
 
         /* ---- KPI CARDS ---- */
         .stats-grid {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
             gap: 1.25rem;
-            margin-bottom: 2.25rem;
+            margin-bottom: 2rem;
         }
         .stat-card {
-            background: #ffffff;
-            border-radius: 1.25rem;
-            padding: 1.3rem 1.5rem;
-            border: 1px solid #eef2f6;
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.02);
+            padding: 1.5rem;
             display: flex;
             flex-direction: column;
+            border-top: 3px solid #1976d2; /* Material Blue Accent */
         }
+        .stat-card:nth-child(2) { border-top-color: #4caf50; } /* Green */
+        .stat-card:nth-child(3) { border-top-color: #ff9800; } /* Orange */
+        .stat-card:nth-child(4) { border-top-color: #f44336; } /* Red */
+
         .stat-header {
             display: flex;
             align-items: center;
@@ -125,153 +142,172 @@ $recentBorrows = $recentStmt->fetchAll();
             margin-bottom: 0.5rem;
         }
         .stat-label {
-            font-size: 0.8rem;
+            font-size: 0.85rem;
             text-transform: uppercase;
-            letter-spacing: 0.04em;
+            letter-spacing: 0.05em;
             font-weight: 500;
-            color: #5e6f8d;
+            color: #757575; /* Material Grey 600 */
         }
         .stat-header .material-icons {
-            font-size: 1.5rem;
-            color: #9aaec7;
+            font-size: 1.8rem;
+            color: #bdbdbd; /* Material Grey 400 */
         }
-        .stat-number { font-size: 2.3rem; font-weight: 450; color: #0b1e3a; line-height: 1.2; }
-        .stat-sub { font-size: 0.85rem; color: #6b7b98; margin-top: 0.3rem; }
+        .stat-number { 
+            font-size: 2.5rem; 
+            font-weight: 400; 
+            color: #212121; 
+            line-height: 1.2; 
+        }
+        .stat-sub { 
+            font-size: 0.85rem; 
+            color: #9e9e9e; 
+            margin-top: 0.3rem; 
+        }
 
         /* ---- CHARTS ---- */
         .charts-grid {
             display: grid;
             grid-template-columns: repeat(2, 1fr);
             gap: 1.5rem;
-            margin-bottom: 1.8rem;
+            margin-bottom: 2rem;
         }
         .chart-card {
-            background: #ffffff;
-            border-radius: 1.5rem;
-            padding: 1.5rem 1.5rem 1rem 1.5rem;
-            border: 1px solid #eef2f6;
-            box-shadow: 0 4px 14px rgba(0, 0, 0, 0.02);
+            padding: 1.5rem;
         }
         .chart-title {
-            font-size: 0.95rem;
+            font-size: 1.1rem;
             font-weight: 500;
-            color: #1e2f4a;
-            margin-bottom: 0.9rem;
+            color: #212121;
+            margin-bottom: 1.5rem;
             display: flex;
             justify-content: space-between;
             align-items: center;
+            border-bottom: 1px solid #e0e0e0;
+            padding-bottom: 0.8rem;
         }
         .chart-title span {
-            font-weight: 350;
-            color: #6b7f9e;
-            font-size: 0.8rem;
-            background: #f1f5f9;
-            padding: 0.15rem 0.6rem;
-            border-radius: 1rem;
+            font-weight: 500;
+            color: #1976d2;
+            font-size: 0.75rem;
+            text-transform: uppercase;
             display: flex;
             align-items: center;
             gap: 0.25rem;
         }
         .chart-title span .material-icons {
-            font-size: 0.9rem;
+            font-size: 1rem;
         }
-        canvas { display: block; width: 100% !important; height: auto !important; max-height: 190px; }
+        canvas { 
+            display: block; 
+            width: 100% !important; 
+            height: auto !important; 
+            max-height: 200px; 
+        }
 
         /* ---- RECENT BORROWS ---- */
         .recent-borrows {
-            background: #ffffff;
-            border-radius: 1.5rem;
-            padding: 1.5rem 1.8rem;
-            border: 1px solid #eef2f6;
-            box-shadow: 0 4px 14px rgba(0, 0, 0, 0.02);
+            padding: 1.5rem;
         }
         .recent-header {
             display: flex;
             justify-content: space-between;
             align-items: center;
             margin-bottom: 1rem;
+            border-bottom: 1px solid #e0e0e0;
+            padding-bottom: 0.8rem;
         }
         .recent-header h3 {
             font-weight: 500;
-            font-size: 1rem;
-            color: #1e2f4a;
+            font-size: 1.1rem;
+            color: #212121;
             display: flex;
             align-items: center;
             gap: 0.4rem;
         }
         .recent-header h3 .material-icons {
-            font-size: 1.2rem;
-            color: #5e6f8d;
+            color: #1976d2;
         }
         .recent-header a {
-            font-size: 0.8rem;
-            color: #2c3e5c;
+            font-size: 0.85rem;
+            color: #1976d2;
+            font-weight: 500;
+            text-transform: uppercase;
             text-decoration: none;
-            border-bottom: 1px dashed #b8c7dd;
             display: flex;
             align-items: center;
             gap: 0.2rem;
         }
-        .recent-header a .material-icons {
-            font-size: 0.9rem;
+        .recent-header a:hover {
+            text-decoration: underline;
         }
+        .recent-header a .material-icons {
+            font-size: 1rem;
+        }
+
         .borrow-row {
             display: flex;
             align-items: center;
             justify-content: space-between;
-            padding: 0.7rem 0;
-            border-bottom: 1px solid #f0f4fa;
-            font-size: 0.9rem;
+            padding: 0.8rem 0;
+            border-bottom: 1px solid #eeeeee;
+            font-size: 0.95rem;
         }
         .borrow-row:last-child { border-bottom: none; }
+        
         .borrow-student {
-            font-weight: 450;
-            color: #0e1f3a;
+            font-weight: 500;
+            color: #424242;
             width: 30%;
             display: flex;
             align-items: center;
-            gap: 0.4rem;
-        }
-        .borrow-student .material-icons {
-            font-size: 1rem;
-            color: #8a9bb8;
+            gap: 0.5rem;
         }
         .borrow-book {
-            color: #3b4e6e;
+            color: #616161;
             width: 45%;
             white-space: nowrap;
             overflow: hidden;
             text-overflow: ellipsis;
             display: flex;
             align-items: center;
-            gap: 0.3rem;
+            gap: 0.4rem;
         }
+        .borrow-student .material-icons,
         .borrow-book .material-icons {
-            font-size: 1rem;
-            color: #8a9bb8;
+            font-size: 1.1rem;
+            color: #9e9e9e;
         }
+
+        /* Material Design Chips */
         .borrow-status {
             font-size: 0.75rem;
-            padding: 0.2rem 0.7rem;
-            border-radius: 2rem;
-            font-weight: 450;
-            background: #f1f5f9;
-            color: #2d405d;
+            padding: 0.3rem 0.8rem;
+            border-radius: 16px; /* Chip border radius */
+            font-weight: 500;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
             display: flex;
             align-items: center;
-            gap: 0.25rem;
+            gap: 0.3rem;
         }
         .borrow-status .material-icons {
-            font-size: 0.8rem;
+            font-size: 0.9rem;
         }
-        .borrow-status.returned { background: #e6f7ec; color: #0b6b3e; }
-        .borrow-status.borrowed { background: #fff6e5; color: #a15e00; }
+        .borrow-status.returned { 
+            background: #e8f5e9; /* Green 50 */
+            color: #2e7d32;      /* Green 800 */
+        }
+        .borrow-status.borrowed { 
+            background: #fff3e0; /* Orange 50 */
+            color: #ef6c00;      /* Orange 800 */
+        }
 
         .footer-note {
-            margin-top: 1.8rem;
+            margin-top: 2rem;
             text-align: center;
-            font-size: 0.78rem;
-            color: #8a9bb8;
+            font-size: 0.8rem;
+            color: #9e9e9e;
+            letter-spacing: 0.5px;
         }
 
         @media (max-width: 760px) {
@@ -279,14 +315,13 @@ $recentBorrows = $recentStmt->fetchAll();
             .stats-grid { grid-template-columns: 1fr 1fr; }
             .borrow-student,
             .borrow-book { width: auto; flex: 1; }
-            .borrow-row { flex-wrap: wrap; gap: 0.3rem; }
+            .borrow-row { flex-wrap: wrap; gap: 0.5rem; }
         }
     </style>
 </head>
 <body>
 <div class="dashboard">
 
-    <!-- NAVBAR (extracted) -->
     <?php include 'includes/navbar.php'; ?>
 
     <!-- KPI CARDS -->
@@ -335,7 +370,7 @@ $recentBorrows = $recentStmt->fetchAll();
                     collection
                 </span>
             </div>
-            <canvas id="categoryChart" width="400" height="190"></canvas>
+            <canvas id="categoryChart" width="400" height="200"></canvas>
         </div>
         <div class="chart-card">
             <div class="chart-title">
@@ -345,7 +380,7 @@ $recentBorrows = $recentStmt->fetchAll();
                     activity
                 </span>
             </div>
-            <canvas id="borrowChart" width="400" height="190"></canvas>
+            <canvas id="borrowChart" width="400" height="200"></canvas>
         </div>
     </div>
 
@@ -362,7 +397,7 @@ $recentBorrows = $recentStmt->fetchAll();
             </a>
         </div>
         <?php if (empty($recentBorrows)): ?>
-            <div class="borrow-row" style="color:#8a9bb8; justify-content:center;">
+            <div class="borrow-row" style="color:#9e9e9e; justify-content:center;">
                 No borrow records yet.
             </div>
         <?php else: ?>
@@ -387,11 +422,21 @@ $recentBorrows = $recentStmt->fetchAll();
         <?php endif; ?>
     </div>
 
-    <div class="footer-note">minimalist dashboard · chart.js · material icons</div>
+    <div class="footer-note">materialize dashboard · chart.js · material icons</div>
 </div>
 
 <script>
     (function() {
+        // Materialize standard palette
+        const colors = {
+            blue: '#1976d2',
+            green: '#4caf50',
+            orange: '#ff9800',
+            red: '#f44336',
+            purple: '#9c27b0',
+            grey: '#9e9e9e'
+        };
+
         // ---------- DOUGHNUT : BOOKS BY CATEGORY ----------
         const catCtx = document.getElementById('categoryChart').getContext('2d');
         new Chart(catCtx, {
@@ -401,46 +446,43 @@ $recentBorrows = $recentStmt->fetchAll();
                 datasets: [{
                     data: <?= json_encode($categoryCounts) ?>,
                     backgroundColor: [
-                        '#3b5d7a', '#7a8fa5', '#b0c2d0', '#d6e0e8', '#e9eef3'
+                        colors.blue, colors.green, colors.orange, colors.red, colors.purple, colors.grey
                     ],
-                    borderWidth: 0,
-                    borderRadius: 3,
-                    spacing: 2,
-                    hoverOffset: 6
+                    borderWidth: 2,
+                    borderColor: '#ffffff',
+                    hoverOffset: 4
                 }]
             },
             options: {
                 responsive: true,
                 maintainAspectRatio: true,
-                cutout: '68%',
+                cutout: '65%',
                 plugins: {
                     legend: {
                         position: 'bottom',
                         labels: {
-                            boxWidth: 8,
-                            boxHeight: 8,
-                            usePointStyle: true,
-                            pointStyle: 'circle',
-                            padding: 14,
-                            font: { size: 11, weight: '400' },
-                            color: '#334155'
+                            boxWidth: 12,
+                            boxHeight: 12,
+                            usePointStyle: false, // Materialize usually uses squares
+                            padding: 16,
+                            font: { size: 12, family: 'Roboto' },
+                            color: '#616161'
                         }
                     },
                     tooltip: {
-                        backgroundColor: '#ffffff',
-                        titleColor: '#0b1b33',
-                        bodyColor: '#3b4e6e',
-                        borderColor: '#e2e8f0',
-                        borderWidth: 1,
-                        padding: 8,
-                        cornerRadius: 8,
+                        backgroundColor: '#212121',
+                        titleColor: '#ffffff',
+                        bodyColor: '#ffffff',
+                        padding: 10,
+                        cornerRadius: 4,
+                        displayColors: true,
                         callbacks: {
                             label: function(context) {
                                 const label = context.label || '';
                                 const value = context.parsed || 0;
                                 const total = context.dataset.data.reduce((a, b) => a + b, 0);
                                 const pct = total > 0 ? ((value / total) * 100).toFixed(0) : 0;
-                                return `${label}: ${value} (${pct}%)`;
+                                return ` ${label}: ${value} (${pct}%)`;
                             }
                         }
                     }
@@ -457,10 +499,10 @@ $recentBorrows = $recentStmt->fetchAll();
                 datasets: [{
                     label: 'Borrows',
                     data: <?= json_encode($dailyBorrows) ?>,
-                    backgroundColor: '#3b5d7a',
-                    borderRadius: 6,
+                    backgroundColor: colors.blue,
+                    borderRadius: 0, // Material flat bars are sharp
                     barPercentage: 0.6,
-                    categoryPercentage: 0.7,
+                    categoryPercentage: 0.8,
                 }]
             },
             options: {
@@ -469,27 +511,25 @@ $recentBorrows = $recentStmt->fetchAll();
                 plugins: {
                     legend: { display: false },
                     tooltip: {
-                        backgroundColor: '#ffffff',
-                        titleColor: '#0b1b33',
-                        bodyColor: '#3b4e6e',
-                        borderColor: '#e2e8f0',
-                        borderWidth: 1,
-                        padding: 8,
-                        cornerRadius: 8,
+                        backgroundColor: '#212121',
+                        titleColor: '#ffffff',
+                        bodyColor: '#ffffff',
+                        padding: 10,
+                        cornerRadius: 4,
                         callbacks: {
-                            label: (ctx) => `${ctx.raw} borrows`
+                            label: (ctx) => ` ${ctx.raw} borrows`
                         }
                     }
                 },
                 scales: {
                     y: {
                         beginAtZero: true,
-                        grid: { color: '#eef2f6', drawBorder: false },
-                        ticks: { stepSize: 1, color: '#5e6f8d', font: { size: 10 } }
+                        grid: { color: '#eeeeee', drawBorder: false },
+                        ticks: { stepSize: 1, color: '#757575', font: { size: 11, family: 'Roboto' } }
                     },
                     x: {
                         grid: { display: false },
-                        ticks: { color: '#5e6f8d', font: { size: 10 } }
+                        ticks: { color: '#757575', font: { size: 11, family: 'Roboto' } }
                     }
                 }
             }
